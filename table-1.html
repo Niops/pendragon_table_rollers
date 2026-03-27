@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Pendragon Kin Events Roller</title>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        margin: 20px;
+      }
+      .row {
+        margin-bottom: 10px;
+      }
+      button {
+        padding: 10px 15px;
+        margin: 5px;
+        cursor: pointer;
+      }
+      .output {
+        margin-top: 20px;
+        padding: 15px;
+        border: 1px solid #ccc;
+        white-space: pre-wrap;
+      }
+      .event-block {
+        margin-bottom: 16px;
+        padding: 12px;
+        border: 1px solid #aaa;
+        border-radius: 4px;
+        background: #f9f9f9;
+      }
+      .event-block .event-text {
+        font-weight: bold;
+        margin-bottom: 6px;
+      }
+      .event-block .skip-btn {
+        margin-top: 8px;
+        padding: 4px 10px;
+        font-size: 0.85em;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="row">
+      <label><input type="checkbox" id="debug" /> Debug</label>
+    </div>
+
+    <h2>Pendragon Kin Events Roller</h2>
+
+    <div class="row">
+      <label>Kin Size: </label>
+      <select id="kinSize">
+        <option value="small">Small</option>
+        <option value="normal" selected>Normal</option>
+        <option value="large">Large</option>
+      </select>
+    </div>
+
+    <div class="row">
+      <label><input type="checkbox" id="knighted" /> Knighted (+5)</label>
+    </div>
+
+    <div class="row">
+      <label><input type="checkbox" id="landed" /> Landed (+5)</label>
+    </div>
+
+    <div class="row">
+      <label
+        ><input type="checkbox" id="fatherLanded" /> Father Landed (+5)</label
+      >
+    </div>
+
+    <div class="row">
+      <button onclick="runEventsTables()">Roll</button>
+    </div>
+
+    <div id="output"></div>
+
+    <script>
+      // ─── Tables ───────────────────────────────────────────────────────────────
+
+      const eventOccurrenceTable = [
+        { min: 1, max: 4, text: "Ordinary, no event roll" },
+        { min: 5, max: 6, text: "Roll for event below" },
+        { min: 7, max: 8, text: "Roll for two events below" },
+      ];
+
+      const kinMemberTable = [
+        { min: 1, max: 2, text: "Grandparent" },
+        { min: 3, max: 4, text: "Parent" },
+        { min: 5, max: 6, text: "Sibling" },
+        { min: 7, max: 8, text: "Sibling of parent" },
+        { min: 9, max: 12, text: "Cousin" },
+        { min: 13, max: 16, text: "Distant cousin" },
+        { min: 17, max: 20, text: "In-laws & half-kin" },
+      ];
+
+      // Each entry: { text, mechanics }
+      // text     = the event headline with the kin member slot as {kin}
+      // mechanics = the options / consequences to display below
+      const kinEvents = {
+        1: {
+          text: "Your {kin} has a betrothed daughter a knight wishes to marry",
+          mechanics:
+            "Select one:\n" +
+            "  a) Wed her to the knight. You gain a Kin Knight, but check Family & Arbitrary and lose 1 Honor.\n" +
+            "  b) Wed her to her betrothed. You gain an Enemy, but check Just and gain 1 Honor.",
+        },
+        2: {
+          text: "Your {kin} has saved up a chainmail or courser for you",
+          mechanics: "Gain chainmail or a courser (your choice).",
+        },
+        3: {
+          text: "A lord wants your {kin} as a concubine",
+          mechanics:
+            "Select one:\n" +
+            "  a) Allow it. Check Family, lose 1 Honor, and gain a Charger.\n" +
+            "  b) Refuse. Gain 1 Honor.",
+        },
+        4: {
+          text: "Your {kin} wants to arrange your marriage",
+          mechanics:
+            "Select one:\n" +
+            "  a) Yes. You are married.\n" +
+            "  b) No. Check Selfish or Proud.",
+        },
+        5: {
+          text: "Your {kin} needs 60d",
+          mechanics:
+            "Select one:\n" +
+            "  a) Pay it. Check Just.\n" +
+            "  b) Refuse. Check Prudent.\n" +
+            "  c) Pay 120d. Check Generous.",
+        },
+        6: {
+          text: "Your {kin} is getting married",
+          mechanics: () => {
+            const d6 = roll(1, 6);
+            const result =
+              d6 <= 3
+                ? "+1 Lineage Man"
+                : d6 <= 5
+                  ? "+2 Lineage Men"
+                  : "+1 Young Kin Knight";
+            return (
+              `Rolled d6=${d6}: ${result}\n\n` +
+              "Full table:\n" +
+              "  [1-3] +1 Lineage Man\n" +
+              "  [4-5] +2 Lineage Men\n" +
+              "  [6]   +1 Young Kin Knight"
+            );
+          },
+        },
+        7: {
+          text: "Your {kin} refuses an arranged marriage",
+          mechanics:
+            "Lose 1 point in one of the following and check the others:\n" +
+            "  Love Family / Love (amor) / Just",
+        },
+        8: {
+          text: "Your {kin} is taking up a profession",
+          mechanics: () => {
+            const professions = {
+              1: "Scribe",
+              2: "Scribe",
+              3: "Herald",
+              4: "Healer",
+              5: "Priest",
+              6: "Steward",
+            };
+            const d6 = roll(1, 6);
+            return (
+              `Rolled d6=${d6}: ${professions[d6]}\n\n` +
+              "Full table:\n" +
+              "  [1-2] Scribe\n" +
+              "  [3]   Herald\n" +
+              "  [4]   Healer\n" +
+              "  [5]   Priest\n" +
+              "  [6]   Steward"
+            );
+          },
+        },
+        9: {
+          text: "Your {kin}, the eldest notable, has died",
+          mechanics:
+            "If there is no direct heir, the kin leader inherits. Roll Luck if the inheritance is unknown.",
+        },
+        10: {
+          text: "Your {kin} calls on you to lead the way",
+          mechanics:
+            "For each success, gain +1 Lineage Man. Gain 1 Honor, Valor, Battle, and Siege.",
+        },
+        11: {
+          text: "A would-be in-law refuses to marry your {kin}'s daughter after rumors",
+          mechanics:
+            "Select one:\n" +
+            "  a) Add 2£ to the dowry. Check Generous & Humble.\n" +
+            "  b) Defend her name in a duel. Check Proud, gain 1 Honor.\n" +
+            "  c) Find a new match. Check Energetic & Love.\n" +
+            "  d) Find out the truth. Check Family, lose 1 Honor, then check Just & Honest.\n" +
+            "  e) Take it to court. Spend ½£ and check Loyalty & Courtesy.",
+        },
+        12: {
+          text: "Your {kin} asks you to arrange a marriage deal",
+          mechanics:
+            "Select one:\n" +
+            "  a) Check Selfish to gain 2d6£.\n" +
+            "  b) Check Prudent to gain a Kin Knight.\n" +
+            "  c) Gain 1 Honor.",
+        },
+        13: {
+          text: "Your {kin} suffers disaster when mustered for battle",
+          mechanics: "Roll on the Kin Knight Muster table.",
+        },
+        14: {
+          text: "Your {kin}, as kin leader, gains a Luck roll",
+          mechanics:
+            "This boon is granted by the kin for the betterment of the kin.",
+        },
+        15: {
+          text: "Your {kin} needs help with a dowry",
+          mechanics:
+            "Select one:\n" +
+            "  a) Refuse. Check Family and lose 1 Honor.\n" +
+            "  b) Pay 1£. Check Generous.\n" +
+            "  c) Pay 3£. Gain 1 Honor.",
+        },
+        16: {
+          text: "Your {kin} is becoming a squire",
+          mechanics:
+            "Each winter roll 1d6:\n" +
+            "  [1] He dies in battle.\n" +
+            "  [6] He survives or becomes a knight (if appropriately aged).\n" +
+            "  [2-5] Nothing changes this year.",
+        },
+        17: {
+          text: "Your {kin} asks you to claim his bastard as your own",
+          mechanics:
+            "Select one:\n" +
+            "  a) Yes. Check Love Family.\n" +
+            "  b) No. Gain 1 Honor.",
+        },
+        18: {
+          text: "Your {kin} has wed above their stature",
+          mechanics: () => {
+            const d6 = roll(1, 6);
+            const age = d6 <= 4 ? "Young" : d6 === 5 ? "Middle-aged" : "Old";
+            return (
+              `Rolled d6=${d6}: Kin Knight is ${age}\n\n` +
+              "Full table:\n" +
+              "  [1-4] Young\n" +
+              "  [5]   Middle-aged\n" +
+              "  [6]   Old"
+            );
+          },
+        },
+        19: {
+          text: "A scandal has broken out involving your {kin}",
+          mechanics:
+            "Roll for the scandal. If you are knighted, you may champion your kin's good name.",
+        },
+        20: {
+          text: "Your {kin} is leaving on a long quest",
+          mechanics:
+            "The quest lasts 3d6 years. He receives 2£ and 300 Glory per year, then returns.",
+        },
+        21: {
+          text: "Your {kin} needs a champion to resolve a dispute (Duel)",
+          mechanics:
+            "Select one:\n" +
+            "  a) Yes. Gain 1 Honor.\n" +
+            "  b) No. Lose 1 Lineage Man.",
+        },
+        22: {
+          text: "Your {kin}, a landed widow with only a daughter, needs a marriage arranged",
+          mechanics:
+            "As warden, select one:\n" +
+            "  a) Marry her yourself. Gain Selfish (+1).\n" +
+            "  b) Marry her to a kin member. Check Love Family & Proud.\n" +
+            "  c) Make the right choice. Gain 1 Honor.",
+        },
+        23: {
+          text: "Your {kin} is at risk in battle",
+          mechanics: () => {
+            const d6 = roll(1, 6);
+            return (
+              `Rolled d6=${d6}. Compare this to the number of middle-aged knights in your kin.\n` +
+              "  If the roll is less than that number, one knight is killed.\n" +
+              "  Otherwise, gain Loot."
+            );
+          },
+        },
+        24: {
+          text: "Your {kin}, still underage, has received a land gift of 3£ per annum",
+          mechanics: "You are warden of the land for 2d6 years.",
+        },
+        25: {
+          text: "Your {kin} is sheltering from vengeance",
+          mechanics:
+            "Choose one to lose 1 point in; check (or for Honor, gain 1) the other two:\n" +
+            "  Love Family / Honor / Loyalty (Lord)",
+        },
+        26: {
+          text: "Your {kin} among the young shows great promise",
+          mechanics:
+            "Select one:\n" +
+            "  a) +1 Lineage Man.\n" +
+            "  b) Take a squire.\n" +
+            "  c) Spend 1£ to gain 1d6 Lineage Men.",
+        },
+        27: {
+          text: "Your {kin}, a youngling, asks you to help him become a squire",
+          mechanics:
+            "Select one:\n" +
+            "  a) Yes. Check Love Family.\n" +
+            "  b) No. Check Temperate.",
+        },
+        28: {
+          text: "Your {kin}, a widow with orphans, needs shelter at half a pound per winter",
+          mechanics:
+            "Select one:\n" +
+            "  a) Refuse. Check Family and lose 1 Honor.\n" +
+            "  b) Arrange her marriage. Check Pious & Proud, or Prudent & Selfish.\n" +
+            "  c) Shelter her yourself. Check Generous & Family.\n" +
+            "     Each winter roll 1d6: [1] Her sons become +1d6 Lineage Men. [6] 2£ in goods is stolen and check Suspicious.",
+        },
+        29: {
+          text: "Your {kin}, the eldest notable, has died",
+          mechanics:
+            "If there is no direct heir, the kin leader inherits. Roll Luck if the inheritance is unknown.",
+        },
+        30: {
+          text: "Your {kin} calls on you to inspire the kin",
+          mechanics:
+            "For each success, gain +1 Lineage Man. Check Orate, Compose, Sing, and Play.",
+        },
+        31: {
+          text: "Your {kin} has been slain without mercy by a neighboring knight",
+          mechanics:
+            "Roll Love Family vs. Just.\n" +
+            "  If Just wins, settle the issue in your lord's court by arms.\n" +
+            "  If Family wins, start a blood feud. Each year roll 1d6:\n" +
+            "    [1] A kin member dies.\n" +
+            "    [6] One of theirs dies (resolve as GM adventure).",
+        },
+        32: {
+          text: "Your {kin} has excelled at your liege lord's court",
+          mechanics: "Gain +1d3 new young knights.",
+        },
+        33: {
+          text: "Your {kin} suffers disaster when mustered for battle",
+          mechanics: "Roll on the Kin Knight Muster table.",
+        },
+        34: {
+          text: "Distant relatives, connected through your {kin}, flee to your lands",
+          mechanics:
+            "You may pay 2£ to gain 1 Population, 1d20 Levy, and check Hospitality.",
+        },
+        35: {
+          text: "Your {kin} has become a raving madman in a fit of passion",
+          mechanics: () => {
+            const d6 = roll(1, 6);
+            const result =
+              d6 >= 4
+                ? "He is healed this winter."
+                : "He remains afflicted. Try again next winter.";
+            return (
+              `Rolled d6=${d6}: ${result}\n\n` +
+              "Full table:\n" +
+              "  [1-3] Remains afflicted.\n" +
+              "  [4-6] Healed.\n\n" +
+              "Costs 1£ each winter to care for him."
+            );
+          },
+        },
+        36: {
+          text: "Your {kin}, an old knight, has died leaving inheritance for two sons to become knights",
+          mechanics: "Gain 2 Young Kin Knights.",
+        },
+        37: {
+          text: "Your {kin} has been taken and is held for ransom",
+          mechanics: "His lord refuses to negotiate. You must act.",
+        },
+        38: {
+          text: "Your {kin}, an elderly knight, has remarried into a smaller kin",
+          mechanics: () => {
+            const d6 = roll(1, 6);
+            return `Rolled d6=${d6}: Gain ${d6} knights and a manor.`;
+          },
+        },
+        39: {
+          text: "A newly spurred knight claims to be your {kin}'s bastard son",
+          mechanics:
+            "Select one:\n" +
+            "  a) Settle it by arms. Check Prudent & Just.\n" +
+            "  b) Send him away. Check Proud & Suspicious.\n" +
+            "  c) Embrace him. Check Trusting & Love Family and gain +1 Kin Knight.",
+        },
+        40: {
+          text: "Your {kin}, still a child, has inherited a manor",
+          mechanics:
+            "You are asked to care for it until they come of age (2d6 winters).",
+        },
+      };
+
+      // ─── Dice ─────────────────────────────────────────────────────────────────
+
+      function roll(min, max) {
+        return Math.floor(Math.random() * (max - min + 1)) + min;
+      }
+
+      // ─── Table lookup ─────────────────────────────────────────────────────────
+
+      function getResultFromRangeTable(table, value) {
+        for (const entry of table) {
+          if (value >= entry.min && value <= entry.max) {
+            return entry.text;
+          }
+        }
+        return "Invalid roll result";
+      }
+
+      // ─── Modifiers ────────────────────────────────────────────────────────────
+
+      function getKinSizeMod() {
+        const val = document.getElementById("kinSize").value;
+        if (val === "small") return 0;
+        if (val === "normal") return 1;
+        return 2;
+      }
+
+      function getKinEventMods() {
+        const knighted = document.getElementById("knighted").checked ? 5 : 0;
+        const landed = document.getElementById("landed").checked ? 5 : 0;
+        const fatherLanded = document.getElementById("fatherLanded").checked
+          ? 5
+          : 0;
+        return knighted + landed + fatherLanded;
+      }
+
+      // ─── Kin member ───────────────────────────────────────────────────────────
+
+      const genderedTitles = {
+        Grandparent: { male: "Grandfather", female: "Grandmother" },
+        Parent: { male: "Father", female: "Mother" },
+        Sibling: { male: "Brother", female: "Sister" },
+        "Sibling of parent": { male: "Uncle", female: "Aunt" },
+        Cousin: { male: "Cousin", female: "Cousin" },
+        "Distant cousin": { male: "Distant Cousin", female: "Distant Cousin" },
+        "In-laws & half-kin": {
+          male: "Half-kinsman",
+          female: "Half-kinswoman",
+        },
+      };
+
+      function rollKinMember() {
+        const kinRoll = roll(1, 20);
+        const gender = roll(1, 2) === 1 ? "male" : "female";
+        const baseRelation = getResultFromRangeTable(kinMemberTable, kinRoll);
+        const titles = genderedTitles[baseRelation];
+        const title = titles ? titles[gender] : baseRelation;
+        return { title, gender };
+      }
+
+      // ─── Output rendering ─────────────────────────────────────────────────────
+
+      function clearOutput() {
+        document.getElementById("output").innerHTML = "";
+      }
+
+      function addTextLine(label, content) {
+        const p = document.createElement("p");
+        p.textContent = `${label}: ${content}`;
+        document.getElementById("output").appendChild(p);
+      }
+
+      // Renders a single event block with its mechanics and a Skip button.
+      // skipFrom = the current index; clicking Skip advances to skipFrom + 1.
+      function renderEventBlock(index, kinMember, slotEl) {
+        const entry = kinEvents[index];
+        if (!entry) return;
+
+        const block = document.createElement("div");
+        block.className = "event-block";
+
+        const headline = document.createElement("div");
+        headline.className = "event-text";
+        headline.textContent = `Event ${index}: ${entry.text.replace("{kin}", kinMember.title)}`;
+        block.appendChild(headline);
+
+        const mechanics = document.createElement("div");
+        mechanics.style.whiteSpace = "pre-wrap";
+        mechanics.textContent =
+          typeof entry.mechanics === "function"
+            ? entry.mechanics()
+            : entry.mechanics;
+        block.appendChild(mechanics);
+
+        const skipBtn = document.createElement("button");
+        skipBtn.className = "skip-btn";
+        skipBtn.textContent = "Not applicable — skip to next entry ▶";
+        skipBtn.onclick = () => {
+          const nextIndex = Math.min(40, index + 1);
+          if (nextIndex === index) {
+            skipBtn.textContent = "Already at last entry (40).";
+            skipBtn.disabled = true;
+            return;
+          }
+          renderEventBlock(nextIndex, kinMember, slotEl);
+        };
+        block.appendChild(skipBtn);
+
+        // Replace whatever was previously in the slot
+        slotEl.innerHTML = "";
+        slotEl.appendChild(block);
+      }
+
+      // ─── Main roll ────────────────────────────────────────────────────────────
+
+      function runEventsTables() {
+        clearOutput();
+
+        const debug = document.getElementById("debug").checked;
+        const kinSizeMod = getKinSizeMod();
+        const occurrenceRoll = roll(1, 6) + kinSizeMod;
+
+        if (debug) {
+          addTextLine(
+            "Debug — Occurrence roll",
+            `d6 + kin size mod (${kinSizeMod}) = ${occurrenceRoll}`,
+          );
+        }
+
+        if (occurrenceRoll <= 4) {
+          addTextLine(
+            "Event",
+            getResultFromRangeTable(eventOccurrenceTable, 1),
+          );
+          return;
+        }
+
+        const numEvents = occurrenceRoll <= 6 ? 1 : 2;
+        const eventMods = getKinEventMods();
+
+        if (debug) {
+          addTextLine(
+            "Debug — Event modifier",
+            `Knighted/Landed/Father bonuses = +${eventMods}`,
+          );
+        }
+
+        for (let i = 0; i < numEvents; i++) {
+          const kinMember = rollKinMember();
+          const d20 = roll(1, 20);
+          const index = Math.min(40, d20 + eventMods);
+
+          if (debug) {
+            addTextLine(
+              `Debug — Event ${i + 1}`,
+              `Kin: ${kinMember.title} (${kinMember.gender}) | d20=${d20} + mods=${eventMods} => index=${index}`,
+            );
+          }
+
+          // Create a placeholder div that renderEventBlock will fill
+          const slotEl = document.createElement("div");
+          document.getElementById("output").appendChild(slotEl);
+          renderEventBlock(index, kinMember, slotEl);
+        }
+      }
+    </script>
+  </body>
+</html>
